@@ -1,0 +1,95 @@
+# Databricks notebook source
+# MAGIC %md
+# MAGIC ## Data Ingestion
+
+# DBTITLE 1,Read Data from S3
+# Read data from S3 into a Spark DataFrame
+data_source = "s3a://my-bucket/data/sales_data.csv"
+sales_df = spark.read.csv(data_source, header=True, inferSchema=True)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Data Transformation
+
+# DBTITLE 1,Transform Data
+from pyspark.sql.functions import col, round, sum
+
+# Add a new column for total revenue
+sales_df = sales_df.withColumn("total_revenue", col("quantity") * col("unit_price"))
+
+# Round total revenue to 2 decimal places
+sales_df = sales_df.withColumn("total_revenue", round("total_revenue", 2))
+
+# Group by product and calculate total revenue
+product_revenue = sales_df.groupBy("product").agg(sum("total_revenue").alias("total_revenue"))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Data Analysis
+
+# DBTITLE 1,Analyze Data
+# Display top 10 products by revenue
+product_revenue.orderBy(col("total_revenue").desc()).show(10)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Data Visualization
+
+# DBTITLE 1,Visualize Data
+# Install required libraries
+# dbutils.library.installPyPI("matplotlib")
+# dbutils.library.restartPython()
+
+import matplotlib.pyplot as plt
+
+# Create a bar chart for top 10 products by revenue
+top_products = product_revenue.orderBy(col("total_revenue").desc()).limit(10).toPandas()
+plt.figure(figsize=(10, 6))
+plt.bar(top_products["product"], top_products["total_revenue"])
+plt.xticks(rotation=45)
+plt.xlabel("Product")
+plt.ylabel("Total Revenue")
+plt.title("Top 10 Products by Revenue")
+display(plt.show())
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Data Export
+
+# DBTITLE 1,Write Data to Delta Lake
+# Write the transformed data to a Delta Lake table
+output_path = "/path/to/output/delta/table"
+sales_df.write.format("delta").mode("overwrite").save(output_path)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Model Training (Example)
+
+# DBTITLE 1,Train a Machine Learning Model
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.regression import RandomForestRegressor
+from pyspark.ml import Pipeline
+
+# Prepare the data for model training
+feature_cols = ["quantity", "unit_price"]
+vector_assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
+sales_df = vector_assembler.transform(sales_df)
+
+# Split the data into training and testing sets
+train_data, test_data = sales_df.randomSplit([0.8, 0.2], seed=42)
+
+# Train a Random Forest Regression model
+rf_regressor = RandomForestRegressor(labelCol="total_revenue")
+pipeline = Pipeline(stages=[vector_assembler, rf_regressor])
+model = pipeline.fit(train_data)
+
+# Evaluate the model
+predictions = model.transform(test_data)
+evaluator = RegressionEvaluator(labelCol="total_revenue", predictionCol="prediction", metricName="rmse")
+rmse = evaluator.evaluate(predictions)
+print(f"Root Mean Squared Error (RMSE): {rmse}")
